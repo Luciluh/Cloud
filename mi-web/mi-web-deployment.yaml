@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mi-web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mi-web
+  template:
+    metadata:
+      labels:
+        app: mi-web
+    spec:
+      containers:
+      - name: mi-web
+        image: mi-web-estatica:v1
+        ports:
+        - containerPort: 80
