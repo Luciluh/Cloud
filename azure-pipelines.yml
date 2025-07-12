@@ -1,0 +1,68 @@
+trigger:
+  branches:
+    include: [ main ]
+
+variables:
+  azureSubscription: 'azdevops'  
+  location: 'westeurope'
+  rgACRName: 'rg-acr'
+  acrName: 'acrluciluh'   # Debe ser único y en minúsculas
+  rgAKSName: 'rg-aks'
+  aksClusterName: 'aksluciluh'
+  imageName: 'miapp'
+  tag: '$(Build.BuildId)'
+
+stages:
+
+- stage: Infra
+  displayName: Crear Infraestructura
+  jobs:
+  - job: Provision
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+    - task: AzureCLI@2
+      inputs:
+        azureSubscription: $(azureSubscription)
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          az group create -n $(rgACRName) -l $(location)
+          az group create -n $(rgAKSName) -l $(location)
+          az acr create -n $(acrName) -g $(rgACRName) --sku Basic --admin-enabled true
+          az aks create -n $(aksClusterName) -g $(rgAKSName) --generate-ssh-keys --attach-acr $(acrName)
+
+- stage: BuildPush
+  displayName: Build & Push Docker
+  dependsOn: Infra
+  jobs:
+  - job: DockerImage
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+    - task: Docker@2
+      inputs:
+        command: buildAndPush
+        repository: $(acrName).azurecr.io/$(imageName)
+        dockerfile: $(Build.SourcesDirectory)/mi-app-k8s/Dockerfile
+        containerRegistry: $(azureSubscription)
+        tags: |
+          $(tag)
+
+- stage: Deploy
+  displayName: Deploy en AKS
+  dependsOn: BuildPush
+  jobs:
+  - job: DeployK8s
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+    - task: AzureCLI@2
+      displayName: Get AKS Credentials & Deploy
+      inputs:
+        azureSubscription: $(azureSubscription)
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          az aks get-credentials -n $(aksClusterName) -g $(rgName) --overwrite-existing
+          kubectl apply -f $(Build.SourcesDirectory)/mi-app-k8s/k8s/
