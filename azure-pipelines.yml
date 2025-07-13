@@ -3,7 +3,7 @@ trigger:
     include: [ main ]
 
 variables:
-  azureSubscription: 'azdevops'  
+  azureSubscription: 'azdevops'  # Conexión de tipo 'azurerm'
   location: 'westeurope'
   rgACRName: 'rg-acr'
   acrName: 'acrluciluh'   # Debe ser único y en minúsculas
@@ -40,14 +40,15 @@ stages:
     pool:
       vmImage: ubuntu-latest
     steps:
+    - checkout: self  # Asegura que el código esté disponible
     - task: Docker@2
       inputs:
         command: buildAndPush
         repository: $(acrName).azurecr.io/$(imageName)
-        dockerfile: $(Build.SourcesDirectory)/mi-app-k8s/Dockerfile
-        containerRegistry: $(azureSubscription)
+        dockerfile: $(Build.SourcesDirectory)/mi-app-k8s/Dockerfile  # Asegúrate que esta sea la ruta real
+        containerRegistry: acr-connection  # Conexión de tipo 'dockerregistry'
         tags: |
-          $(tag)
+          latest
 
 - stage: Deploy
   displayName: Deploy en AKS
@@ -64,5 +65,5 @@ stages:
         scriptType: bash
         scriptLocation: inlineScript
         inlineScript: |
-          az aks get-credentials -n $(aksClusterName) -g $(rgName) --overwrite-existing
+          az aks get-credentials -n $(aksClusterName) -g $(rgAKSName) --overwrite-existing
           kubectl apply -f $(Build.SourcesDirectory)/mi-app-k8s/k8s/
