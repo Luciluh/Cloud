@@ -8,11 +8,13 @@ on:
 env:
   AZURE_LOCATION: 'westeurope'
   RG_ACR_NAME: 'rg-acr'
-  ACR_NAME: 'acrluciluh'        # Debe ser único y minúsculas
+  ACR_NAME: 'acrluciluh'        # Debe ser único y en minúsculas
   RG_AKS_NAME: 'rg-aks'
   AKS_CLUSTER_NAME: 'aksluciluh'
   IMAGE_NAME: 'miapp'
   IMAGE_TAG: 'latest'
+  AKS_NODE_COUNT: 1
+  AKS_NODE_SIZE: 'Standard_B2s'
 
 jobs:
   build_push:
@@ -21,12 +23,54 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: 'Login via Azure CLI'
+      - name: Login via Azure CLI
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Login to Azure Container Registry
+      - name: Crear RG, ACR y AKS si no existen (PowerShell)
+        shell: pwsh
+        run: |
+          Write-Host "🔍 Verificando recursos en Azure..."
+
+          # Verificar y crear grupo de recursos AKS
+          if (-not (az group show --name $env:RG_AKS_NAME 2>$null)) {
+            Write-Host "➕ Creando grupo de recursos AKS: $env:RG_AKS_NAME"
+            az group create --name $env:RG_AKS_NAME --location $env:AZURE_LOCATION
+          } else {
+            Write-Host "✅ Grupo de recursos $env:RG_AKS_NAME ya existe"
+          }
+
+          # Verificar y crear grupo y ACR
+          if (-not (az acr show --name $env:ACR_NAME --resource-group $env:RG_ACR_NAME 2>$null)) {
+            Write-Host "➕ Creando grupo de recursos ACR (si no existe): $env:RG_ACR_NAME"
+            az group create --name $env:RG_ACR_NAME --location $env:AZURE_LOCATION
+
+            Write-Host "➕ Creando ACR: $env:ACR_NAME"
+            az acr create `
+              --name $env:ACR_NAME `
+              --resource-group $env:RG_ACR_NAME `
+              --sku Basic `
+              --admin-enabled true
+          } else {
+            Write-Host "✅ ACR $env:ACR_NAME ya existe"
+          }
+
+          # Verificar y crear clúster AKS
+          if (-not (az aks show --name $env:AKS_CLUSTER_NAME --resource-group $env:RG_AKS_NAME 2>$null)) {
+            Write-Host "➕ Creando clúster AKS: $env:AKS_CLUSTER_NAME"
+            az aks create `
+              --resource-group $env:RG_AKS_NAME `
+              --name $env:AKS_CLUSTER_NAME `
+              --node-count $env:AKS_NODE_COUNT `
+              --node-vm-size $env:AKS_NODE_SIZE `
+              --generate-ssh-keys `
+              --attach-acr $env:ACR_NAME
+          } else {
+            Write-Host "✅ Clúster AKS $env:AKS_CLUSTER_NAME ya existe"
+          }
+
+      - name: Login to ACR
         run: az acr login --name $ACR_NAME
 
       - name: Build and push Docker image
